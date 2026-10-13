@@ -14,6 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -29,6 +30,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Chaquopy requires AndroidPlatform before any Python use
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(this))
+        }
 
         webView = findViewById(R.id.webview)
         loadingPanel = findViewById(R.id.loadingPanel)
