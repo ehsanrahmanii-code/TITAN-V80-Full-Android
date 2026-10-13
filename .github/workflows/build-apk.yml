@@ -14,6 +14,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extract engine ZIP if present (phone upload)
+        run: |
+          set -e
+          mkdir -p app/src/main/python
+
+          # Support both possible zip names the user may upload
+          if [ -f titan-v80-python-engine.zip ]; then
+            echo "Found titan-v80-python-engine.zip"
+            unzip -o titan-v80-python-engine.zip -d .
+          elif [ -f TITAN-V80-Full-Android-complete.zip ]; then
+            echo "Found TITAN-V80-Full-Android-complete.zip"
+            unzip -o TITAN-V80-Full-Android-complete.zip -d /tmp/fullproj
+            # copy python from extracted full project
+            if [ -d /tmp/fullproj/app/src/main/python ]; then
+              cp -a /tmp/fullproj/app/src/main/python/. app/src/main/python/
+            elif [ -d /tmp/fullproj/python ]; then
+              cp -a /tmp/fullproj/python/. app/src/main/python/
+            fi
+          elif [ -f engine.zip ]; then
+            echo "Found engine.zip"
+            unzip -o engine.zip -d app/src/main/
+          fi
+
+          # Also handle if zip extracted with a top-level python/ folder
+          if [ -d python ] && [ ! -f app/src/main/python/titan_bootstrap.py ]; then
+            cp -a python/. app/src/main/python/
+          fi
+
+          echo "=== Python files after extract ==="
+          find app/src/main/python -name "*.py" 2>/dev/null | wc -l || true
+          ls -la app/src/main/python/ 2>/dev/null || true
+
       - name: Verify Python engine package
         run: |
           set -e
