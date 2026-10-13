@@ -1,27 +1,29 @@
 # TITAN V80 Full Android
 
-برنامه اندروید **با موتور کامل ماژولار** TITAN PRO V80 (Flask + numpy + pandas + 80+ لایه).
+برنامه اندروید با موتور کامل ماژولار TITAN PRO V80.
 
-- بدون داشبورد جعلی
-- موتور واقعی روی `http://127.0.0.1:8080`
-- داده فقط داخل پوشه خصوصی اپ (`filesDir/MMM`)
-- فقط تحلیل (analysis-only)
+## ساخت APK از گوشی (فقط یک فایل زیپ)
 
-## ساخت APK (گام‌به‌گام)
+1. فایل زیپ را از چت دانلود کنید (هر کدام از این دو):
+   - `titan-v80-python-engine.zip`
+   - یا `TITAN-V80-Full-Android-complete.zip`
 
-1. فایل **TITAN-V80-Full-Android-complete.zip** را که از چت دانلود کردید باز کنید.
-2. پوشه `app/src/main/python` را از داخل zip کپی کنید.
-3. در این ریپو روی GitHub بروید → **Add file → Upload files**.
-4. محتویات `python` (شامل `titan_bootstrap.py` و پوشه `titan/`) را داخل مسیر `app/src/main/python/` آپلود کنید.
-5. Commit کنید.
-6. بروید به تب **Actions** → workflow اجرا می‌شود.
+2. بروید به این آدرس:
+   **https://github.com/ehsanrahmanii-code/TITAN-V80-Full-Android**
+
+3. دکمه **Add file** (بالای لیست فایل‌ها) → **Upload files** را بزنید.
+
+4. فایل زیپ را انتخاب کنید و در **ریشه ریپو** (همان صفحه اصلی، نه داخل هیچ پوشه‌ای) آپلود کنید.
+
+5. پایین صفحه **Commit changes** را بزنید.
+
+6. بروید به تب **Actions** → صبر کنید تا بیلد تمام شود.
+
 7. Artifact به نام **TITAN-V80-Android-APK** را دانلود کنید.
 
 ## نصب
 
-1. APK را نصب کنید (Unknown sources را فعال کنید).
-2. اولین اجرا ممکن است ۱–۳ دقیقه طول بکشد.
+- Unknown sources را فعال کنید و APK را نصب کنید.
+- اولین اجرا ۱ تا ۳ دقیقه طول می‌کشد.
 
-## نسخه
-
-**80.0.0** — Modular monolith + advanced platform
+نسخه: **80.0.0**
