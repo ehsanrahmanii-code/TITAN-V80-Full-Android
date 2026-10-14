@@ -70,29 +70,42 @@ class MainActivity : AppCompatActivity() {
                 val py = Python.getInstance()
                 val boot = py.getModule("titan_bootstrap")
                 if (!started) {
-                    boot.callAttr("start_titan", filesDir.absolutePath)
+                    val result = boot.callAttr("start_titan", filesDir.absolutePath).toString()
                     started = true
+                    ui.post { loadingText.text = "وضعیت: $result\nمنتظر داشبورد… (حداکثر ۲ دقیقه)" }
                 }
-                ui.post { loadingText.text = "منتظر داشبورد Flask… (ممکن است ۱–۲ دقیقه طول بکشد)" }
-                val ready = boot.callAttr("wait_ready", "http://127.0.0.1:8080/api/v80/health", 240.0).toBoolean()
+                // Wait up to 120 seconds
+                val ready = boot.callAttr("wait_ready", "http://127.0.0.1:8080/", 120.0).toBoolean()
                 ui.post {
-                    if (ready) {
-                        webView.loadUrl("http://127.0.0.1:8080/")
-                    } else {
-                        val err = try {
-                            boot.callAttr("last_error").toString()
-                        } catch (_: Exception) {
-                            ""
-                        }
-                        loadingText.text = "موتور بالا نیامد.\n$err"
-                        Toast.makeText(this, "Engine timeout: $err", Toast.LENGTH_LONG).show()
-                        webView.loadUrl("http://127.0.0.1:8080/")
+                    val err = try {
+                        boot.callAttr("last_error").toString()
+                    } catch (_: Exception) {
+                        ""
                     }
+                    if (ready) {
+                        loadingText.text = "آماده شد"
+                    } else {
+                        loadingText.text = "موتور کامل بالا نیامد.\n$err\nدر حال باز کردن صفحه…"
+                        if (err.isNotBlank()) {
+                            Toast.makeText(this, err.take(200), Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    // Always try to open the page (fallback server will answer if full engine failed)
+                    webView.loadUrl("http://127.0.0.1:8080/")
+                    // Hide spinner after a short delay even if page is slow
+                    ui.postDelayed({
+                        loadingPanel.visibility = View.GONE
+                    }, 3000)
                 }
             } catch (e: Exception) {
                 ui.post {
                     loadingText.text = "خطای موتور:\n${e.message}"
                     Toast.makeText(this, e.message ?: "error", Toast.LENGTH_LONG).show()
+                    // Still try to load something
+                    webView.loadUrl("http://127.0.0.1:8080/")
+                    ui.postDelayed({
+                        loadingPanel.visibility = View.GONE
+                    }, 4000)
                 }
             }
         }
