@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 """Bootstrap TITAN PRO V80 modular engine inside Chaquopy Android APK.
-
-Uses app-private storage (filesDir/MMM) so no All-files permission is required.
-Patches the hard-lock that would otherwise refuse Android when shared storage
-is present but not writable.
+Improved error reporting + minimal fallback server so the app never hangs forever.
 """
 from __future__ import annotations
 
@@ -14,11 +11,13 @@ import time
 import traceback
 import urllib.request
 from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 _started = False
 _lock = threading.Lock()
 _last_error = ""
 _error_log = None
+_fallback_started = False
 
 
 def _record_error(label: str) -> str:
@@ -32,7 +31,7 @@ def _record_error(label: str) -> str:
                 fp.write("\n" + "=" * 70 + "\n" + _last_error + "\n")
     except Exception:
         pass
-    print(_last_error)
+    print(_last_error, flush=True)
     return _last_error
 
 
@@ -74,6 +73,77 @@ def _patch_bootstrap_storage(text: str) -> str:
     return text
 
 
+def _check_engine_present(here: Path) -> str:
+    """Return empty string if OK, otherwise error description."""
+    runtime = here / "titan" / "runtime.py"
+    if not runtime.is_file() or runtime.stat().st_size < 1000:
+        return f"titan/runtime.py missing or too small ({runtime})"
+    layers = here / "titan" / "layers"
+    if not layers.is_dir():
+        return "titan/layers/ directory missing"
+    count = sum(1 for _ in layers.rglob("*.py"))
+    if count < 50:
+        return f"Only {count} layer .py files found (expected 80+). Engine ZIP was not extracted correctly at build time."
+    return ""
+
+
+class _FallbackHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+    def do_GET(self):
+        err = _last_error or "نامشخص - موتور کامل لود نشد"
+        body = f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TITAN V80</title>
+<style>
+body{{font-family:system-ui;background:#0b1220;color:#e2e8f0;margin:0;padding:24px;line-height:1.6}}
+h1{{color:#38bdf8;font-size:1.4rem}}
+.box{{background:#1e293b;border-radius:12px;padding:16px;margin:16px 0;border:1px solid #334155}}
+pre{{white-space:pre-wrap;font-size:12px;color:#f87171;background:#0f172a;padding:12px;border-radius:8px;overflow:auto}}
+.ok{{color:#4ade80}}
+</style>
+</head>
+<body>
+<h1>TITAN PRO V80</h1>
+<div class="box">
+<p class="ok">موتور کامل بالا نیامد — حالت پشتیبان فعال است.</p>
+<p>این یعنی فایل‌های پایتون موتور یا وابستگی‌ها (numpy/pandas) داخل APK درست لود نشده‌اند.</p>
+</div>
+<div class="box">
+<strong>آخرین خطا:</strong>
+<pre>{err}</pre>
+</div>
+<div class="box">
+<p>راه‌حل: از Actions یک بیلد تازه بگیرید و APK جدید را نصب کنید.</p>
+</div>
+</body>
+</html>"""
+        data = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+
+def _start_fallback():
+    global _fallback_started
+    if _fallback_started:
+        return
+    _fallback_started = True
+    try:
+        server = HTTPServer(("127.0.0.1", 8080), _FallbackHandler)
+        t = threading.Thread(target=server.serve_forever, name="titan-fallback", daemon=True)
+        t.start()
+        print("Fallback HTTP server started on 127.0.0.1:8080", flush=True)
+    except Exception:
+        _record_error("Fallback server failed")
+
+
 def start_titan(files_dir: str) -> str:
     """Start the real TITAN V80 modular Flask engine in a background thread."""
     global _started, _error_log
@@ -105,12 +175,25 @@ def start_titan(files_dir: str) -> str:
             if str(here) not in sys.path:
                 sys.path.insert(0, str(here))
 
+            # Diagnostic: is the full engine present?
+            missing = _check_engine_present(here)
+            if missing:
+                global _last_error
+                _last_error = "ENGINE INCOMPLETE: " + missing
+                print(_last_error, flush=True)
+                _start_fallback()
+                _started = True
+                return "fallback-incomplete"
+
             bs_path = here / "titan" / "layers" / "core" / "bootstrap_storage.py"
             if bs_path.is_file():
-                raw = bs_path.read_text(encoding="utf-8", errors="replace")
-                patched = _patch_bootstrap_storage(raw)
-                if patched != raw:
-                    bs_path.write_text(patched, encoding="utf-8")
+                try:
+                    raw = bs_path.read_text(encoding="utf-8", errors="replace")
+                    patched = _patch_bootstrap_storage(raw)
+                    if patched != raw:
+                        bs_path.write_text(patched, encoding="utf-8")
+                except Exception:
+                    _record_error("patch bootstrap_storage")
 
             def _run():
                 try:
@@ -118,16 +201,19 @@ def start_titan(files_dir: str) -> str:
                     load(str(here / "titan" / "runtime.py"), as_main=True)
                 except Exception:
                     _record_error("TITAN runtime.load error")
+                    _start_fallback()
 
             threading.Thread(target=_run, name="titan-v80-flask", daemon=True).start()
             _started = True
             return "started"
         except Exception:
             _record_error("TITAN bootstrap error")
-            raise RuntimeError(_last_error)
+            _start_fallback()
+            _started = True
+            return "fallback-error"
 
 
-def wait_ready(url: str = "http://127.0.0.1:8080/api/v80/health", timeout: float = 240.0) -> bool:
+def wait_ready(url: str = "http://127.0.0.1:8080/api/v80/health", timeout: float = 120.0) -> bool:
     deadline = time.time() + float(timeout)
     urls = [
         url,
@@ -140,12 +226,14 @@ def wait_ready(url: str = "http://127.0.0.1:8080/api/v80/health", timeout: float
     while time.time() < deadline:
         for u in urls:
             try:
-                with urllib.request.urlopen(u, timeout=2.5) as resp:
+                with urllib.request.urlopen(u, timeout=2.0) as resp:
                     if 200 <= getattr(resp, "status", 200) < 500:
                         return True
             except Exception:
                 pass
         time.sleep(1.0)
+    # Timeout — start fallback so user sees something instead of infinite spinner
+    _start_fallback()
     return False
 
 
