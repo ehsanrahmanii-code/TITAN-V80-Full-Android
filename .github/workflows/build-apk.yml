@@ -14,62 +14,78 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract engine ZIP if present (phone upload)
+      - name: Extract FULL engine ZIP (strict)
         run: |
           set -e
           mkdir -p app/src/main/python
 
-          if [ -f titan-v80-python-engine.zip ]; then
-            echo "Found titan-v80-python-engine.zip"
-            unzip -o titan-v80-python-engine.zip -d /tmp/engine
-            # Support both structures: python/titan/...  OR  titan/...
-            if [ -d /tmp/engine/python/titan ]; then
-              cp -a /tmp/engine/python/. app/src/main/python/
-              echo "Extracted python/ structure"
-            elif [ -d /tmp/engine/titan ]; then
-              cp -a /tmp/engine/titan app/src/main/python/
-              echo "Extracted top-level titan/ structure"
-            else
-              echo "Unknown ZIP structure:"
-              find /tmp/engine -maxdepth 3 -type d
-              exit 1
-            fi
-          elif [ -f TITAN-V80-Full-Android-complete.zip ]; then
-            echo "Found TITAN-V80-Full-Android-complete.zip"
-            unzip -o TITAN-V80-Full-Android-complete.zip -d /tmp/fullproj
-            if [ -d /tmp/fullproj/app/src/main/python ]; then
-              cp -a /tmp/fullproj/app/src/main/python/. app/src/main/python/
-            elif [ -d /tmp/fullproj/python ]; then
-              cp -a /tmp/fullproj/python/. app/src/main/python/
-            fi
-          elif [ -f engine.zip ]; then
-            echo "Found engine.zip"
-            unzip -o engine.zip -d app/src/main/
+          # Remove any incomplete/stub titan package left in the repo
+          rm -rf app/src/main/python/titan
+          echo "Cleaned old titan/ stubs"
+
+          if [ ! -f titan-v80-python-engine.zip ]; then
+            echo "ERROR: titan-v80-python-engine.zip not found in repo root"
+            ls -la
+            exit 1
           fi
 
-          # Extra safety: if a python/ folder landed in root
-          if [ -d python ] && [ ! -f app/src/main/python/titan_bootstrap.py ]; then
-            cp -a python/. app/src/main/python/
+          echo "Found titan-v80-python-engine.zip ($(du -h titan-v80-python-engine.zip | cut -f1))"
+          unzip -o titan-v80-python-engine.zip -d /tmp/engine
+
+          echo "=== ZIP contents (top) ==="
+          find /tmp/engine -maxdepth 3 -type d
+          find /tmp/engine -name "runtime.py" -exec ls -l {} \;
+
+          if [ -d /tmp/engine/python/titan ]; then
+            cp -a /tmp/engine/python/. app/src/main/python/
+            echo "Extracted: python/ structure"
+          elif [ -d /tmp/engine/titan ]; then
+            cp -a /tmp/engine/titan app/src/main/python/
+            echo "Extracted: top-level titan/ structure"
+          else
+            echo "ERROR: Unknown ZIP structure"
+            find /tmp/engine -maxdepth 4
+            exit 1
           fi
 
-          # Extra safety: if titan/ landed in root
-          if [ -d titan ] && [ ! -d app/src/main/python/titan ]; then
-            cp -a titan app/src/main/python/
-          fi
+          # Keep the bootstrap that lives in the repo (it has Android patches + fallback)
+          # It was not inside the engine ZIP, so it stays from checkout.
 
-          echo "=== Python files after extract ==="
-          find app/src/main/python -name "*.py" 2>/dev/null | wc -l || true
-          ls -la app/src/main/python/ 2>/dev/null || true
-          ls app/src/main/python/titan/layers/ 2>/dev/null || true
+          echo "=== After extract ==="
+          ls -la app/src/main/python/
+          ls -la app/src/main/python/titan/ || true
+          ls -la app/src/main/python/titan/runtime.py || true
+          find app/src/main/python -name "*.py" | wc -l
 
-      - name: Verify Python engine package
+      - name: STRICT Verify full engine (fail if incomplete)
         run: |
           set -e
-          test -f app/src/main/python/titan_bootstrap.py
-          test -f app/src/main/python/titan/runtime.py
-          test -d app/src/main/python/titan/layers
-          echo "Python files:"
-          find app/src/main/python -name "*.py" | wc -l
+
+          test -f app/src/main/python/titan_bootstrap.py || { echo "Missing titan_bootstrap.py"; exit 1; }
+
+          RUNTIME="app/src/main/python/titan/runtime.py"
+          test -f "$RUNTIME" || { echo "Missing $RUNTIME"; exit 1; }
+
+          SIZE=$(stat -c%s "$RUNTIME")
+          echo "runtime.py size = $SIZE bytes"
+          if [ "$SIZE" -lt 2000 ]; then
+            echo "ERROR: runtime.py is too small ($SIZE bytes). Engine ZIP was not extracted correctly."
+            echo "File content:"
+            cat "$RUNTIME" || true
+            exit 1
+          fi
+
+          test -d app/src/main/python/titan/layers || { echo "Missing titan/layers"; exit 1; }
+
+          COUNT=$(find app/src/main/python -name "*.py" | wc -l)
+          echo "Total .py files = $COUNT"
+          if [ "$COUNT" -lt 80 ]; then
+            echo "ERROR: Only $COUNT .py files found (need >= 80). Engine is incomplete."
+            find app/src/main/python -name "*.py" | head -50
+            exit 1
+          fi
+
+          echo "Engine OK: runtime.py=${SIZE}B, py_files=${COUNT}"
           ls app/src/main/python/titan/layers/
 
       - name: Set up Python 3.11 (required by Chaquopy)
