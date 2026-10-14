@@ -1,5 +1,1 @@
-"""TITAN PRO V80.0 — Modular monolith + advanced platform (observability, rate-limit, structured errors)."""
-__version__ = "80.0.0"
-V78_VERSION = "80.0.0"
-V79_VERSION = "80.0.0"
-V80_VERSION = "80.0.0"
+# TITAN PRO V80
