@@ -19,22 +19,17 @@ jobs:
           set -e
           mkdir -p app/src/main/python
 
-          # Remove any incomplete/stub titan package left in the repo
           rm -rf app/src/main/python/titan
           echo "Cleaned old titan/ stubs"
 
           if [ ! -f titan-v80-python-engine.zip ]; then
-            echo "ERROR: titan-v80-python-engine.zip not found in repo root"
+            echo "ERROR: titan-v80-python-engine.zip not found"
             ls -la
             exit 1
           fi
 
           echo "Found titan-v80-python-engine.zip ($(du -h titan-v80-python-engine.zip | cut -f1))"
           unzip -o titan-v80-python-engine.zip -d /tmp/engine
-
-          echo "=== ZIP contents (top) ==="
-          find /tmp/engine -maxdepth 3 -type d
-          find /tmp/engine -name "runtime.py" -exec ls -l {} \;
 
           if [ -d /tmp/engine/python/titan ]; then
             cp -a /tmp/engine/python/. app/src/main/python/
@@ -48,47 +43,74 @@ jobs:
             exit 1
           fi
 
-          # Keep the bootstrap that lives in the repo (it has Android patches + fallback)
-          # It was not inside the engine ZIP, so it stays from checkout.
-
           echo "=== After extract ==="
-          ls -la app/src/main/python/
-          ls -la app/src/main/python/titan/ || true
-          ls -la app/src/main/python/titan/runtime.py || true
           find app/src/main/python -name "*.py" | wc -l
-
-      - name: STRICT Verify full engine (fail if incomplete)
-        run: |
-          set -e
-
-          test -f app/src/main/python/titan_bootstrap.py || { echo "Missing titan_bootstrap.py"; exit 1; }
-
-          RUNTIME="app/src/main/python/titan/runtime.py"
-          test -f "$RUNTIME" || { echo "Missing $RUNTIME"; exit 1; }
-
-          SIZE=$(stat -c%s "$RUNTIME")
-          echo "runtime.py size = $SIZE bytes"
-          if [ "$SIZE" -lt 2000 ]; then
-            echo "ERROR: runtime.py is too small ($SIZE bytes). Engine ZIP was not extracted correctly."
-            echo "File content:"
-            cat "$RUNTIME" || true
-            exit 1
-          fi
-
-          test -d app/src/main/python/titan/layers || { echo "Missing titan/layers"; exit 1; }
-
-          COUNT=$(find app/src/main/python -name "*.py" | wc -l)
-          echo "Total .py files = $COUNT"
-          if [ "$COUNT" -lt 80 ]; then
-            echo "ERROR: Only $COUNT .py files found (need >= 80). Engine is incomplete."
-            find app/src/main/python -name "*.py" | head -50
-            exit 1
-          fi
-
-          echo "Engine OK: runtime.py=${SIZE}B, py_files=${COUNT}"
+          ls -la app/src/main/python/titan/layers/core/bootstrap_storage.py
           ls app/src/main/python/titan/layers/
 
-      - name: Set up Python 3.11 (required by Chaquopy)
+      - name: Patch runtime.py for Chaquopy (replace is_file checks)
+        run: |
+          set -e
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("app/src/main/python/titan/runtime.py")
+          raw = p.read_text(encoding="utf-8")
+          old = '''        path = LAYER_DIR / f"{name}.py"
+        if not path.is_file():
+            raise FileNotFoundError(f"TITAN layer missing: {path}")
+        try:
+            src = path.read_text(encoding="utf-8")
+            code = compile(src, str(path), "exec", flags=_FLAGS, dont_inherit=True)
+        except (OSError, SyntaxError) as exc:
+            raise RuntimeError(f"Failed to load TITAN layer {name}: {exc}") from exc'''
+          new = '''        path = LAYER_DIR / f"{name}.py"
+        try:
+            src = path.read_text(encoding="utf-8")
+        except Exception as exc:
+            raise FileNotFoundError(f"TITAN layer missing or unreadable: {path} ({exc})") from exc
+        try:
+            code = compile(src, str(path), "exec", flags=_FLAGS, dont_inherit=True)
+        except SyntaxError as exc:
+            raise RuntimeError(f"Failed to load TITAN layer {name}: {exc}") from exc'''
+          if old not in raw:
+            # try softer match
+            if "if not path.is_file()" in raw:
+              raw2 = raw.replace(
+                  "if not path.is_file():\n            raise FileNotFoundError(f\"TITAN layer missing: {path}\")",
+                  "# Chaquopy: skip is_file(); try read instead\n        pass  # is_file unreliable on AssetFinder",
+              )
+              p.write_text(raw2, encoding="utf-8")
+              print("Patched with soft replace")
+            else:
+              print("WARNING: is_file pattern not found; leaving runtime as-is")
+              print(raw[raw.find("LAYER_DIR"):raw.find("LAYER_DIR")+500] if "LAYER_DIR" in raw else "no LAYER_DIR")
+          else:
+            p.write_text(raw.replace(old, new), encoding="utf-8")
+            print("Patched runtime.py for Chaquopy")
+          PY
+
+      - name: STRICT Verify full engine
+        run: |
+          set -e
+          test -f app/src/main/python/titan_bootstrap.py
+          test -f app/src/main/python/titan/runtime.py
+          test -f app/src/main/python/titan/layers/core/bootstrap_storage.py
+          test -f app/src/main/python/titan/layers/web/flask_app.py
+          test -f app/src/main/python/titan/layers/entry/main_entry.py
+
+          SIZE=$(stat -c%s app/src/main/python/titan/runtime.py)
+          BS=$(stat -c%s app/src/main/python/titan/layers/core/bootstrap_storage.py)
+          COUNT=$(find app/src/main/python -name "*.py" | wc -l)
+          echo "runtime.py=$SIZE  bootstrap_storage.py=$BS  py_count=$COUNT"
+
+          if [ "$SIZE" -lt 2000 ]; then echo "runtime too small"; exit 1; fi
+          if [ "$BS" -lt 1000 ]; then echo "bootstrap_storage too small"; exit 1; fi
+          if [ "$COUNT" -lt 80 ]; then echo "too few py files: $COUNT"; exit 1; fi
+
+          echo "Engine OK"
+          ls app/src/main/python/titan/layers/
+
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -136,9 +158,7 @@ jobs:
         env:
           GRADLE_OPTS: -Xmx4g -Dorg.gradle.daemon=false
         run: |
-          python3 --version
-          which python3
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew clean assembleDebug --stacktrace --no-daemon
 
       - name: Name APK
         run: |
