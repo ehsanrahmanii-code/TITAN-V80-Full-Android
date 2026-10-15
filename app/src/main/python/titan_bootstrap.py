@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Bootstrap TITAN PRO V80 inside Chaquopy.
-
-Do NOT check filesystem paths for source files — Chaquopy AssetFinder paths
-are not reliable. Just try importing and starting the engine.
-"""
+"""Bootstrap TITAN PRO V80 inside Chaquopy Android."""
 from __future__ import annotations
 
 import os
@@ -37,33 +33,6 @@ def _record_error(label: str) -> str:
     return _last_error
 
 
-def _patch_bootstrap_storage_if_possible() -> None:
-    """Best-effort patch; assets may be read-only."""
-    try:
-        import titan.layers.core.bootstrap_storage as bs  # type: ignore
-        # If we can import it, engine layers are present
-        return
-    except Exception:
-        pass
-    try:
-        here = Path(__file__).resolve().parent
-        bs_path = here / "titan" / "layers" / "core" / "bootstrap_storage.py"
-        if not bs_path.is_file():
-            return
-        raw = bs_path.read_text(encoding="utf-8", errors="replace")
-        text = raw.replace(
-            "if android_storage_present:\n        raise RuntimeError(",
-            "if False and android_storage_present:\n        raise RuntimeError(",
-        )
-        if text != raw:
-            try:
-                bs_path.write_text(text, encoding="utf-8")
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-
 class _FallbackHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
@@ -85,13 +54,8 @@ pre{{white-space:pre-wrap;font-size:11px;color:#f87171;background:#0f172a;paddin
 </head>
 <body>
 <h1>TITAN PRO V80</h1>
-<div class="box">
-<p>موتور کامل بالا نیامد — حالت پشتیبان.</p>
-</div>
-<div class="box">
-<strong>خطا:</strong>
-<pre>{err}</pre>
-</div>
+<div class="box"><p>موتور کامل بالا نیامد — حالت پشتیبان.</p></div>
+<div class="box"><strong>خطا:</strong><pre>{err}</pre></div>
 </body>
 </html>"""
         data = body.encode("utf-8")
@@ -126,6 +90,7 @@ def start_titan(files_dir: str) -> str:
             home.mkdir(parents=True, exist_ok=True)
             for sub in ("data", "cache", "memory", "secrets"):
                 (home / sub).mkdir(exist_ok=True)
+            (home / "cache" / "tmp").mkdir(parents=True, exist_ok=True)
             _error_log = home / "data" / "android_bootstrap_errors.log"
 
             os.environ["TITAN_HOME"] = str(home_root)
@@ -134,32 +99,53 @@ def start_titan(files_dir: str) -> str:
             os.environ["TITAN_OPEN_BROWSER"] = "0"
             os.environ["TITAN_ANALYSIS_ONLY"] = "1"
             os.environ["TITAN_LIVE_TRADING"] = "0"
-            os.environ.setdefault("TMPDIR", str(home / "cache" / "tmp"))
-            os.environ.setdefault("TEMP", str(home / "cache" / "tmp"))
-            os.environ.setdefault("TMP", str(home / "cache" / "tmp"))
+            os.environ["TMPDIR"] = str(home / "cache" / "tmp")
+            os.environ["TEMP"] = str(home / "cache" / "tmp")
+            os.environ["TMP"] = str(home / "cache" / "tmp")
             os.environ["PYTHONUNBUFFERED"] = "1"
 
             here = Path(__file__).resolve().parent
             if str(here) not in sys.path:
                 sys.path.insert(0, str(here))
 
-            # --- Prove engine is importable (no Path/stat games) ---
             try:
                 import titan  # noqa: F401
-                from titan import runtime as titan_runtime  # noqa: F401
+                from titan import runtime as _rt  # noqa: F401
             except Exception:
-                _record_error("Cannot import titan.runtime — engine not packaged in APK")
+                _record_error("Cannot import titan.runtime")
                 _start_fallback()
                 _started = True
                 return "fallback-no-import"
 
-            _patch_bootstrap_storage_if_possible()
-
             def _run():
                 try:
                     from titan.runtime import load
-                    # Prefer calling load with as_main so Flask starts
-                    load(None, as_main=True)
+                    # Original load() REQUIRES a real entry_file string path
+                    # (it does Path(entry_file).resolve() for __file__ in the namespace).
+                    entry = str(here / "titan" / "runtime.py")
+                    ns = load(entry, as_main=True)
+
+                    # If layers didn't start a server via __main__, start Flask/waitress ourselves
+                    app = ns.get("app") if isinstance(ns, dict) else None
+                    if app is not None:
+                        host = os.environ.get("TITAN_HOST", "127.0.0.1")
+                        port = int(os.environ.get("TITAN_PORT", "8080"))
+                        try:
+                            from waitress import serve
+                            print(f"Starting waitress on {host}:{port}", flush=True)
+                            serve(app, host=host, port=port, threads=4)
+                        except Exception:
+                            print(f"Starting flask app.run on {host}:{port}", flush=True)
+                            app.run(host=host, port=port, threaded=True, use_reloader=False)
+                    else:
+                        # Maybe start_server / run_titan exists
+                        starter = None
+                        if isinstance(ns, dict):
+                            starter = ns.get("start_server") or ns.get("run_titan") or ns.get("main")
+                        if callable(starter):
+                            starter()
+                        else:
+                            raise RuntimeError("Engine loaded but no Flask app or start_server found in namespace")
                 except Exception:
                     _record_error("TITAN runtime.load error")
                     _start_fallback()
@@ -174,7 +160,7 @@ def start_titan(files_dir: str) -> str:
             return "fallback-error"
 
 
-def wait_ready(url: str = "http://127.0.0.1:8080/", timeout: float = 150.0) -> bool:
+def wait_ready(url: str = "http://127.0.0.1:8080/", timeout: float = 180.0) -> bool:
     deadline = time.time() + float(timeout)
     urls = [
         "http://127.0.0.1:8080/",
