@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.chaquo.python")
 }
 
 android {
@@ -12,12 +11,8 @@ android {
         applicationId = "com.titan.v80"
         minSdk = 24
         targetSdk = 34
-        versionCode = 80
-        versionName = "80.0-full-engine"
-
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
+        versionCode = 81
+        versionName = "80.1-webview"
     }
 
     buildTypes {
@@ -35,29 +30,6 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
-    }
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-        resources {
-            excludes += setOf("META-INF/INDEX.LIST", "META-INF/DEPENDENCIES")
-        }
-    }
-}
-
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-        pip {
-            install("requests")
-            install("flask")
-            install("numpy")
-            install("pandas")
-            install("urllib3")
-            install("websocket-client")
-            install("waitress")
-        }
     }
 }
 
