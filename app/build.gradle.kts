@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.chaquo.python")
 }
 
 android {
@@ -11,8 +12,23 @@ android {
         applicationId = "com.titan.v80"
         minSdk = 24
         targetSdk = 34
-        versionCode = 81
-        versionName = "80.1-webview"
+        versionCode = 812
+        versionName = "80.1.2-nervous"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+
+        python {
+            version = "3.11"
+            pip {
+                install("numpy==1.26.4")
+                install("pandas==2.1.4")
+                install("flask==3.0.3")
+                install("waitress==3.0.0")
+                install("requests==2.32.3")
+            }
+        }
     }
 
     buildTypes {
@@ -30,6 +46,11 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    packaging {
+        resources {
+            excludes += setOf("META-INF/LICENSE*", "META-INF/NOTICE*")
+        }
     }
 }
 
