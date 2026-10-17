@@ -1,29 +1,30 @@
-# TITAN V80 Full Android
+# TITAN PRO V80.1.2 — Full Android APK
 
-برنامه اندروید با موتور کامل ماژولار TITAN PRO V80.
+موتور تحلیل کریپتو (فقط تحلیل، بدون اجرای سفارش) داخل APK با **Chaquopy**.
 
-## ساخت APK از گوشی (فقط یک فایل زیپ)
+## نسخه
+- **80.1.2-nervous** — Central Nervous Seal، سطوح LONG/SHORT درست، ماتریس TF ساختاریافته
 
-1. فایل زیپ را از چت دانلود کنید (هر کدام از این دو):
-   - `titan-v80-python-engine.zip`
-   - یا `TITAN-V80-Full-Android-complete.zip`
+## ساخت APK
+1. Actions → **Build TITAN V80 Android APK** → Run workflow
+2. بعد از اتمام، Artifact: `TITAN-V80-Android-APK` را دانلود کنید
+3. روی گوشی نصب کنید (Unknown sources)
 
-2. بروید به این آدرس:
-   **https://github.com/ehsanrahmanii-code/TITAN-V80-Full-Android**
+یا محلی:
+```bash
+./gradlew assembleDebug
+# خروجی: app/build/outputs/apk/debug/app-debug.apk
+```
 
-3. دکمه **Add file** (بالای لیست فایل‌ها) → **Upload files** را بزنید.
+## داخل برنامه
+- Flask + waitress روی `127.0.0.1:8080`
+- WebView به همان آدرس
+- داده در `filesDir/MMM/`
+- وابستگی‌های Python داخل APK (numpy, pandas, flask, waitress, requests)
 
-4. فایل زیپ را انتخاب کنید و در **ریشه ریپو** (همان صفحه اصلی، نه داخل هیچ پوشه‌ای) آپلود کنید.
+## محدودیت صادقانه
+- قیمت زنده نیاز به اینترنت دارد (صرافی)
+- این محیط (Grok) نمی‌تواند APK را روی گوشی واقعی نصب و تست کند؛ ساخت از GitHub Actions است
 
-5. پایین صفحه **Commit changes** را بزنید.
-
-6. بروید به تب **Actions** → صبر کنید تا بیلد تمام شود.
-
-7. Artifact به نام **TITAN-V80-Android-APK** را دانلود کنید.
-
-## نصب
-
-- Unknown sources را فعال کنید و APK را نصب کنید.
-- اولین اجرا ۱ تا ۳ دقیقه طول می‌کشد.
-
-نسخه: **80.0.0**
+## ریپو
+https://github.com/ehsanrahmanii-code/TITAN-V80-Full-Android
